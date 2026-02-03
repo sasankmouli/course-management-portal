@@ -4,14 +4,19 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import smtplib
 import os
+from werkzeug.utils import secure_filename
 from email.message import EmailMessage
+import requests
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+FROM_EMAIL = "onboarding@resend.dev"  # default works
+
 
 app = Flask(__name__)
 
 app.secret_key = "DheerajSanghiMoodleDoodle2"
 
-import os
-from werkzeug.utils import secure_filename
+
 
 UPLOAD_FOLDER = "uploads"
 LECTURE_FOLDER = os.path.join(UPLOAD_FOLDER, "lectures")
@@ -45,26 +50,32 @@ def get_enrolled_emails(course_id):
 
 def send_email(to_email, subject, body):
     try:
-        if not ADMIN_EMAIL or not ADMIN_PASS:
-            print("Email not configured; skipping email.")
+        if not RESEND_API_KEY:
+            print("Resend not configured; skipping email.")
             return
 
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = ADMIN_EMAIL
-        msg["To"] = to_email
-        msg.set_content(body)
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": FROM_EMAIL,
+                "to": to_email,
+                "subject": subject,
+                "text": body,
+            },
+            timeout=10
+        )
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
-            smtp.login(ADMIN_EMAIL, ADMIN_PASS)
-            smtp.send_message(msg)
-
-        print(f"Email sent to {to_email}")
+        if response.status_code >= 400:
+            print("Resend error:", response.text)
+        else:
+            print(f"Email sent to {to_email}")
 
     except Exception as e:
-        # 🔥 THIS is what prevents crashes
-        print("Email error:", e)
-
+        print("Email exception:", e)
 
 
 def init_db():
