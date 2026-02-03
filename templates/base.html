@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Course Portal</title>
+</head>
+<body>
+<h1>📚 Course Management Portal</h1>
+
+<a href="/">Home</a>
+
+{% if session.get("instructor") %}
+  | <a href="/instructor/dashboard">Instructor Dashboard</a>
+  | <a href="/add">Add Course</a>
+  | <a href="/logout">Instructor Logout</a>
+
+{% elif session.get("student_id") %}
+  | <a href="/student/dashboard">My Dashboard</a>
+  | <a href="/student/logout">Student Logout</a>
+
+{% else %}
+  | <a href="/student/login">Student Login</a>
+  | <a href="/student/register">Student Register</a>
+  | <a href="/login">Instructor Login</a>
+{% endif %}
+
+<hr>
+
+
+
+{% block content %}{% endblock %}
+
+
+</body>
+</html>

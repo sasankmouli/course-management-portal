@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Welcome, {{ session["student_name"] }}</h2>
+
+<h3>📚 My Courses</h3>
+
+{% if courses %}
+  {% for c in courses %}
+    <p>
+      <b>{{ c[1] }}</b> ({{ c[2] }})
+      <a href="/course/{{ c[0] }}">Go to course</a>
+    </p>
+  {% endfor %}
+{% else %}
+  <p>You are not enrolled in any courses yet.</p>
+{% endif %}
+{% endblock %}
