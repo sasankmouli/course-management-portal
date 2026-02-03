@@ -542,3 +542,8 @@ def instructor_required():
 if __name__ == "__main__":
     init_db()
     app.run()
+
+
+with app.app_context():
+    init_db()
+
