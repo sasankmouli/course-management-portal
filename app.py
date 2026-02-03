@@ -9,7 +9,7 @@ from email.message import EmailMessage
 import requests
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-FROM_EMAIL = "onboarding@resend.dev"  # default works
+FROM_EMAIL = "noreply@sasankmouli.com"  # default works
 
 
 app = Flask(__name__)
