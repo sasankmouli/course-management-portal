@@ -8,6 +8,11 @@ from werkzeug.utils import secure_filename
 from email.message import EmailMessage
 import requests
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = "noreply@sasankmouli.com"  # default works
 
@@ -36,10 +41,19 @@ ADMIN_PASS = os.getenv("ADMIN_PASS")
 INSTRUCTOR_USERNAME = os.getenv("INSTRUCTOR_USERNAME")
 INSTRUCTOR_PASSWORD_HASH = os.getenv("INSTRUCTOR_PASSWORD_HASH")
 
+def get_db():
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=RealDictCursor,
+        sslmode="require"
+    )
+
+
 
 def get_enrolled_emails(course_id):
-    conn = sqlite3.connect(DB)
-    rows = conn.execute(
+    conn = get_db()
+    cur = conn.cursor()
+    rows = cur.execute(
         "SELECT DISTINCT email FROM enrollments WHERE course_id=?",
         (course_id,)
     ).fetchall()
@@ -79,54 +93,54 @@ def send_email(to_email, subject, body):
 
 
 def init_db():
-    conn = sqlite3.connect(DB)
+    conn = get_db()
     cur = conn.cursor()
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        email TEXT UNIQUE,
-        password TEXT
-    )
-    """)
-
-    cur.execute("""
     CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         title TEXT,
         instructor TEXT,
         description TEXT,
         submission_url TEXT
-    )
+    );
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS students (
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        email TEXT UNIQUE,
+        password TEXT
+    );
     """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS enrollments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         student_name TEXT,
         email TEXT,
-        course_id INTEGER
-    )
+        course_id INTEGER REFERENCES courses(id)
+    );
     """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS lectures (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         title TEXT,
         filename TEXT,
-        course_id INTEGER
-    )
+        course_id INTEGER REFERENCES courses(id)
+    );
     """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS assignments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         title TEXT,
         filename TEXT,
         due_date TEXT,
-        course_id INTEGER
-    )
+        course_id INTEGER REFERENCES courses(id)
+    );
     """)
 
     conn.commit()
@@ -136,8 +150,9 @@ def init_db():
 
 @app.route("/")
 def index():
-    conn = sqlite3.connect(DB)
-    courses = conn.execute("SELECT * FROM courses").fetchall()
+    conn = get_db()
+    cur = conn.cursor()
+    courses = cur.execute("SELECT * FROM courses").fetchall()
     conn.close()
     return render_template("index.html", courses=courses)
 
@@ -154,8 +169,9 @@ def add_course():
         description = request.form["description"]
         submission_url = request.form["submission_url"]
 
-        conn = sqlite3.connect(DB)
-        conn.execute(
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
             """
             INSERT INTO courses (title, instructor, description, submission_url)
             VALUES (?,?,?,?)
@@ -178,10 +194,11 @@ def enroll(course_id):
     if not session.get("student_id"):
         return redirect("/student/login")
 
-    conn = sqlite3.connect(DB)
+    conn = get_db()
+    cur = conn.cursor()
 
     # Get student email
-    student = conn.execute(
+    student = cur.execute(
         "SELECT email, name FROM students WHERE id=?",
         (session["student_id"],)
     ).fetchone()
@@ -193,7 +210,7 @@ def enroll(course_id):
     email, name = student
 
     # Prevent duplicate enrollment
-    already = conn.execute("""
+    already = cur.execute("""
         SELECT 1 FROM enrollments
         WHERE email=? AND course_id=?
     """, (email, course_id)).fetchone()
@@ -203,13 +220,13 @@ def enroll(course_id):
         return redirect(f"/course/{course_id}")
 
     # Enroll
-    conn.execute(
+    cur.execute(
         "INSERT INTO enrollments (student_name, email, course_id) VALUES (?,?,?)",
         (name, email, course_id)
     )
 
     # Get course name for email
-    course = conn.execute(
+    course = cur.execute(
         "SELECT title FROM courses WHERE id=?",
         (course_id,)
     ).fetchone()
@@ -238,8 +255,9 @@ def delete_course(course_id):
     if not session.get("instructor"):
         return redirect("/login")
 
-    conn = sqlite3.connect(DB)
-    conn.execute("DELETE FROM courses WHERE id=?", (course_id,))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM courses WHERE id=?", (course_id,))
     conn.commit()
     conn.close()
 
@@ -259,8 +277,9 @@ def add_assignment(course_id):
         filename = secure_filename(file.filename)
         file.save(os.path.join(ASSIGNMENT_FOLDER, filename))
 
-        conn = sqlite3.connect(DB)
-        conn.execute(
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
             "INSERT INTO assignments (title, filename, due_date, course_id) VALUES (?,?,?,?)",
             (title, filename, due_date, course_id)
         )
@@ -295,8 +314,9 @@ def add_lecture(course_id):
         filename = secure_filename(file.filename)
         file.save(os.path.join(LECTURE_FOLDER, filename))
 
-        conn = sqlite3.connect(DB)
-        conn.execute(
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
             "INSERT INTO lectures (title, filename, course_id) VALUES (?,?,?)",
             (title, filename, course_id)
         )
@@ -350,10 +370,11 @@ def logout():
 
 @app.route("/course/<int:course_id>")
 def course_page(course_id):
-    conn = sqlite3.connect(DB)
+    conn = get_db()
+    cur = conn.cursor()
 
     # Fetch course
-    course = conn.execute(
+    course = cur.execute(
         "SELECT * FROM courses WHERE id=?",
         (course_id,)
     ).fetchone()
@@ -368,7 +389,7 @@ def course_page(course_id):
 
     # ✅ Student access check
     elif session.get("student_id"):
-        enrolled = conn.execute("""
+        enrolled = cur.execute("""
             SELECT 1 FROM enrollments
             WHERE course_id=?
               AND email = (
@@ -388,12 +409,12 @@ def course_page(course_id):
 
 
     # Fetch resources
-    lectures = conn.execute(
+    lectures = cur.execute(
         "SELECT * FROM lectures WHERE course_id=?",
         (course_id,)
     ).fetchall()
 
-    assignments = conn.execute(
+    assignments = cur.execute(
         "SELECT * FROM assignments WHERE course_id=?",
         (course_id,)
     ).fetchall()
@@ -414,9 +435,10 @@ def student_register():
         email = request.form["email"]
         password = generate_password_hash(request.form["password"])
 
-        conn = sqlite3.connect(DB)
+        conn = get_db()
+        cur = conn.cursor()
         try:
-            conn.execute(
+            cur.execute(
                 "INSERT INTO students (name, email, password) VALUES (?,?,?)",
                 (name, email, password)
             )
@@ -426,7 +448,7 @@ def student_register():
             return "Email already registered"
 
         # Log student in immediately
-        student_id = conn.execute(
+        student_id = cur.execute(
             "SELECT id FROM students WHERE email=?",
             (email,)
         ).fetchone()[0]
@@ -446,8 +468,9 @@ def student_login():
         email = request.form["email"]
         password = request.form["password"]
 
-        conn = sqlite3.connect(DB)
-        student = conn.execute(
+        conn = get_db()
+        cur = conn.cursor()
+        student = cur.execute(
             "SELECT id, name, password FROM students WHERE email=?",
             (email,)
         ).fetchone()
@@ -467,9 +490,10 @@ def student_dashboard():
     if not session.get("student_id"):
         return redirect("/student/login")
 
-    conn = sqlite3.connect(DB)
+    conn = get_db()
+    cur = conn.cursor()
 
-    courses = conn.execute("""
+    courses = cur.execute("""
         SELECT courses.id, courses.title, courses.instructor
         FROM courses
         JOIN enrollments ON courses.id = enrollments.course_id
@@ -499,8 +523,9 @@ def instructor_dashboard():
     if not session.get("instructor"):
         return redirect("/login")
 
-    conn = sqlite3.connect(DB)
-    courses = conn.execute("SELECT * FROM courses").fetchall()
+    conn = get_db()
+    cur = conn.cursor()
+    courses = cur.execute("SELECT * FROM courses").fetchall()
     conn.close()
 
     return render_template(
