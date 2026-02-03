@@ -45,20 +45,26 @@ def get_enrolled_emails(course_id):
 
 def send_email(to_email, subject, body):
     try:
+        if not ADMIN_EMAIL or not ADMIN_PASS:
+            print("Email not configured; skipping email.")
+            return
+
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = ADMIN_EMAIL
         msg["To"] = to_email
         msg.set_content(body)
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
             smtp.login(ADMIN_EMAIL, ADMIN_PASS)
             smtp.send_message(msg)
 
-        print("Email sent to", to_email)
+        print(f"Email sent to {to_email}")
 
     except Exception as e:
-        print("Email failed:", e)
+        # 🔥 THIS is what prevents crashes
+        print("Email error:", e)
+
 
 
 def init_db():
