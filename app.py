@@ -41,7 +41,6 @@ INSTRUCTOR_PASSWORD_HASH = os.getenv("INSTRUCTOR_PASSWORD_HASH")
 def get_db():
     return psycopg2.connect(
         DATABASE_URL,
-        cursor_factory=RealDictCursor,
         sslmode="require"
     )
 
@@ -176,6 +175,7 @@ def add_course():
             (title, instructor, description, submission_url)
         )
         conn.commit()
+        cur.close()
         conn.close()
 
         return redirect("/")
